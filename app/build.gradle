@@ -1,0 +1,86 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+    id 'org.jetbrains.kotlin.plugin.compose'
+}
+def releaseKeystoreFile = rootProject.file('keystore.properties')
+def releaseKeystore = new Properties()
+if (releaseKeystoreFile.exists()) {
+    releaseKeystoreFile.withReader('UTF-8') { releaseKeystore.load(it) }
+}
+def releaseSigningFields = ['storeFile', 'storePassword', 'keyAlias', 'keyPassword']
+def hasReleaseSigning = releaseSigningFields.every { releaseKeystore.getProperty(it) }
+def validateReleaseKeystore = tasks.register('validateReleaseKeystore') {
+    doLast {
+        def missing = releaseSigningFields.findAll { !releaseKeystore.getProperty(it) }
+        if (!missing.isEmpty()) {
+            throw new GradleException("Configure keystore.properties before building a release. Missing: ${missing.join(', ')}")
+        }
+        if (!rootProject.file(releaseKeystore.getProperty('storeFile')).isFile()) {
+            throw new GradleException('Release keystore file does not exist. Check storeFile in keystore.properties.')
+        }
+    }
+}
+tasks.matching { it.name == 'preReleaseBuild' }.configureEach {
+    dependsOn validateReleaseKeystore
+}
+
+android {
+    namespace 'pro.sportcast.tv'
+    compileSdk 36
+    defaultConfig {
+        applicationId 'pro.sportcast.tv'
+        minSdk 28
+        targetSdk 33
+        versionCode 16
+        versionName '0.5.0'
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    buildFeatures { compose true }
+    signingConfigs {
+        release {
+            if (hasReleaseSigning) {
+                storeFile rootProject.file(releaseKeystore.getProperty('storeFile'))
+                storePassword releaseKeystore.getProperty('storePassword')
+                keyAlias releaseKeystore.getProperty('keyAlias')
+                keyPassword releaseKeystore.getProperty('keyPassword')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt')
+        }
+    }
+    testOptions { unitTests.returnDefaultValues = true }
+    lint { abortOnError true; disable 'OldTargetApi' }
+}
+kotlin { compilerOptions { jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17 } }
+dependencies {
+    def composeBom = platform('androidx.compose:compose-bom:2025.08.01')
+    implementation composeBom
+    androidTestImplementation composeBom
+    implementation 'androidx.activity:activity-compose:1.10.1'
+    implementation 'androidx.compose.foundation:foundation'
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.compose.ui:ui-tooling-preview'
+    debugImplementation 'androidx.compose.ui:ui-tooling'
+    implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.9.4'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.9.4'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.9.4'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2'
+    implementation 'io.insert-koin:koin-androidx-compose:4.1.1'
+    implementation 'androidx.media3:media3-exoplayer:1.11.1'
+    implementation 'androidx.media3:media3-exoplayer-hls:1.11.1'
+    implementation 'androidx.media3:media3-ui:1.11.1'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20240303'
+    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'androidx.compose.ui:ui-test-junit4'
+    debugImplementation 'androidx.compose.ui:ui-test-manifest'
+}
