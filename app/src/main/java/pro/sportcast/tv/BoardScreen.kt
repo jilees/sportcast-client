@@ -6,6 +6,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
@@ -60,53 +61,59 @@ fun BoardScreen(
             else -> "day:0"
         }
         if (target.startsWith("event:")) {
-            val index = ids.indexOf(target.removePrefix("event:"))
-            if (grid.layoutInfo.visibleItemsInfo.none { it.index == index }) grid.scrollToItem(index)
+            val index = ids.indexOf(target.removePrefix("event:")) + 1
+            if (grid.layoutInfo.visibleItemsInfo.none { it.index == index }) grid.scrollToItem(if (index == 1) 0 else index)
         }
         withFrameNanos { }
         requesters[target]?.requestFocus()
     }
-    Column(Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 20.dp)) {
-        Row(Modifier.fillMaxWidth().height(44.dp), verticalAlignment = Alignment.CenterVertically) {
-            Image(painterResource(R.drawable.sportcast_wordmark), "Sportcast", Modifier.size(140.dp, 40.dp))
-            Spacer(Modifier.width(32.dp))
-            listOf("Сегодня", "Завтра").forEachIndexed { index, label ->
-                val tag = "day:$index"
-                val selected = state.day == state.now.atZone(Schedule.ZONE).toLocalDate().plusDays(index.toLong())
-                Box(Modifier.size(88.dp, 38.dp).focusRequester(focus(tag)).onFocusChanged { if (it.isFocused) onFocus(tag) }
-                    .testTag(tag).navButton(selected) { onDay(index.toLong()) }, contentAlignment = Alignment.Center) {
-                    UiText(label, 15, if (selected) TvUi.Text else TvUi.Muted, bold = true)
+    BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 20.dp)) {
+        val columns = if (maxWidth >= 1040.dp) 3 else 2
+        val height = ((maxHeight - 18.dp) / 2).coerceIn(236.dp, 252.dp)
+        LazyVerticalGrid(GridCells.Fixed(columns), Modifier.fillMaxSize().padding(3.dp), state = grid,
+            horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 12.dp)) {
+            item(key = "board-header", span = { GridItemSpan(maxLineSpan) }) {
+                Column {
+                    Row(Modifier.fillMaxWidth().height(44.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Image(painterResource(R.drawable.sportcast_wordmark), "Sportcast", Modifier.size(140.dp, 40.dp))
+                        Spacer(Modifier.width(32.dp))
+                        listOf("Сегодня", "Завтра").forEachIndexed { index, label ->
+                            val tag = "day:$index"
+                            val selected = state.day == state.now.atZone(Schedule.ZONE).toLocalDate().plusDays(index.toLong())
+                            Box(Modifier.size(88.dp, 38.dp).focusRequester(focus(tag)).onFocusChanged { if (it.isFocused) onFocus(tag) }
+                                .testTag(tag).navButton(selected) { onDay(index.toLong()) }, contentAlignment = Alignment.Center) {
+                                UiText(label, 15, if (selected) TvUi.Text else TvUi.Muted, bold = true)
+                            }
+                            if (index == 0) Spacer(Modifier.width(6.dp))
+                        }
+                        Spacer(Modifier.weight(1f))
+                        UiText(state.day.format(DateTimeFormatter.ofPattern("d MMMM", Russian)), 12, TvUi.Muted)
+                    }
+                    if (sports.size > 1) {
+                        Row(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 12.dp).height(42.dp), verticalAlignment = Alignment.CenterVertically) {
+                            (listOf("all") + sports).forEach { sport ->
+                                val tag = "sport:$sport"
+                                val selected = sport == state.selectedFilter
+                                Box(Modifier.padding(end = 5.dp).height(38.dp).focusRequester(focus(tag))
+                                    .onFocusChanged { if (it.isFocused) onFocus(tag) }.testTag(tag)
+                                    .navButton(selected) { onSport(sport) }.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
+                                    UiText(Schedule.sportLabel(sport).uppercase(Russian), 19, if (selected) TvUi.Text else TvUi.Muted, display = true)
+                                }
+                            }
+                        }
+                    }
+                    if (state.status.isNotEmpty()) UiText(state.status, 12, TvUi.Muted, Modifier.padding(start = 4.dp, bottom = 10.dp))
                 }
-                if (index == 0) Spacer(Modifier.width(6.dp))
             }
-            Spacer(Modifier.weight(1f))
-            UiText(state.day.format(DateTimeFormatter.ofPattern("d MMMM", Russian)), 12, TvUi.Muted)
-        }
-        if (sports.size > 1) {
-            Row(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 12.dp).height(42.dp), verticalAlignment = Alignment.CenterVertically) {
-                (listOf("all") + sports).forEach { sport ->
-                    val tag = "sport:$sport"
-                    val selected = sport == state.selectedFilter
-                    Box(Modifier.padding(end = 5.dp).height(38.dp).focusRequester(focus(tag))
-                        .onFocusChanged { if (it.isFocused) onFocus(tag) }.testTag(tag)
-                        .navButton(selected) { onSport(sport) }.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
-                        UiText(Schedule.sportLabel(sport).uppercase(Russian), 19, if (selected) TvUi.Text else TvUi.Muted, display = true)
+            if (cards.isEmpty() && !state.loading) {
+                item(key = "board-empty", span = { GridItemSpan(maxLineSpan) }) {
+                    Column(Modifier.fillMaxSize().padding(top = 60.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        UiText(if (state.error) "РАСПИСАНИЕ НЕДОСТУПНО" else "ТРАНСЛЯЦИЙ ПОКА НЕТ", 34, display = true)
+                        UiText(if (state.error) "Проверьте интернет и повторите загрузку." else "Выберите другой день.", 14, TvUi.Muted, Modifier.padding(top = 12.dp, bottom = 20.dp))
+                        if (state.error) Box(Modifier.focusRequester(focus("retry")).testTag("retry").navButton(false, onRetry).padding(16.dp, 12.dp)) { UiText("Повторить", 15) }
                     }
                 }
-            }
-        }
-        if (state.status.isNotEmpty()) UiText(state.status, 12, TvUi.Muted, Modifier.padding(start = 4.dp, bottom = 10.dp))
-        BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
-            val columns = if (maxWidth >= 1040.dp) 3 else 2
-            val height = ((maxHeight - 18.dp) / 2).coerceIn(236.dp, 252.dp)
-            if (cards.isEmpty() && !state.loading) {
-                Column(Modifier.fillMaxSize().padding(top = 60.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    UiText(if (state.error) "РАСПИСАНИЕ НЕДОСТУПНО" else "ТРАНСЛЯЦИЙ ПОКА НЕТ", 34, display = true)
-                    UiText(if (state.error) "Проверьте интернет и повторите загрузку." else "Выберите другой день.", 14, TvUi.Muted, Modifier.padding(top = 12.dp, bottom = 20.dp))
-                    if (state.error) Box(Modifier.focusRequester(focus("retry")).testTag("retry").navButton(false, onRetry).padding(16.dp, 12.dp)) { UiText("Повторить", 15) }
-                }
-            } else LazyVerticalGrid(GridCells.Fixed(columns), Modifier.fillMaxSize().padding(3.dp), state = grid,
-                horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 12.dp)) {
+            } else {
                 itemsIndexed(cards, key = { _, event -> event.id }) { index, event ->
                     val tag = "event:${event.id}"
                     MatchCard(event, state.now, logos, Modifier.height(height).focusRequester(focus(tag))
